@@ -1,0 +1,292 @@
+<link rel="import" href="../polymer/polymer-element.html">
+<link rel="import" href="../iron-ajax/iron-ajax.html">
+<link rel="import" href="./google-js-api.html">
+
+<!--
+Authentication with a given provider and then a a configured API which
+should have:
+
+Google Auth: ${api}/auth/google-auth
+@param {String} token - google token id
+-->
+<dom-module id="serverless-auth">
+  <template>
+    <a href="#" on-pointerdown="googleSignIn">
+      <span class="buttonText">Google</span>
+    </a>
+  </template>
+
+  <script>
+
+    /**
+     * Fired when an error is received.
+     *
+     * @event error
+     */
+
+    class ServerlessAuth extends Polymer.Element {
+
+      static get is() {return 'serverless-auth';}
+
+      static get config() {
+        return {
+          properties: {
+
+            googleClientId: {
+              type: String,
+              observer: '_googleClientIdChanged',
+            },
+
+            apiEndpoint: {
+              type: String,
+            },
+
+            signedIn: {
+              type: Boolean,
+              value: false,
+              notify: true,
+              readOnly: true,
+            },
+
+            signedInProvider: {
+              type: String,
+              readOnly: true,
+            },
+
+            sessionExpired: {
+              type: Boolean,
+              readOnly: true,
+              notify: true,
+            },
+
+            loading: {
+              type: Boolean,
+              value: false,
+              notify: true,
+              computed: '_computeLoading(_requestsSent)'
+            },
+
+          }
+        };
+      }
+
+      constructor() {
+        super();
+
+        this._gauth2 = null;
+        this._loadAuth2Request = null;
+        this._refreshInterval = null;
+        this._requestsSent = 0;
+        this._session = null;
+        this._apiLoader = new Promise(resolve => {
+          const googleJsApi = document.createElement('google-js-api');
+          googleJsApi.addEventListener('js-api-load', resolve);
+        });
+      }
+
+      connectedCallback() {
+        super.connectedCallback();
+        this._signInFromCache();
+
+        requestAnimationFrame(_ => {
+          window.addEventListener('online', this._onBackOnline.bind(this));
+        });
+      }
+
+      refresh() {
+        if (this.signedIn) {
+          if (this.signedInProvider === 'google') {
+            return this._refreshGoogleToken();
+          } else if (this.signedInProvider === 'cognito') {
+            return this._refreshCognitoToken();
+          }
+        }
+      }
+
+      googleSignIn() {
+        if (this.googleClientId && !this.signedIn) {
+          this._requestsSent ++;
+
+          this._loadAuth2().then(_ => {
+            this._gauth2.signIn().then(_ => {
+              this._requestsSent --;
+            });
+          });
+        }
+      }
+
+      // cognitoSignIn() {}
+      // _refreshCognitoToken() {}
+      // _cognitoApiSignIn() {}
+
+      _googleClientIdChanged(googleClientId) {
+        if (googleClientId) {
+          this._loadAuth2();
+        }
+      }
+
+      _refreshGoogleToken() {
+        if (this._gauth2) {
+          return this._gauth2.currentUser.get().reloadAuthResponse();
+          // on token received listener _handleGoogleUserUpdate will be called
+        }
+      }
+
+      _apiRefreshToken({provider, token}) {
+        Promise.resolve().then(_ => {
+          if (provider === 'google') {
+            // refresh google calls the same get token method but
+            // it could be a refresh endpoint
+            return this._googleApiSignIn(token);
+          }
+        }).then(this._updateSession.bind(this, provider));
+      }
+
+      _apiSignIn({provider, token}) {
+        Promise.resolve().then(_ => {
+          if (provider === 'google') {
+            return this._googleApiSignIn(token);
+          }
+        }).then(this._updateSession.bind(this, provider));
+      }
+
+      _loadAuth2() {
+        if (!this._loadAuth2Request) {
+          this._loadAuth2Request = new Promise((resolve, reject) => {
+            this._apiLoader.then(_ => {
+              gapi.load('auth2', _ => {
+                if (!('gapi' in window) || !('auth2' in window.gapi)) {
+                  reject(new Error('Could not load google auth2'));
+                  return;
+                }
+                this._initAuth2();
+                resolve();
+              });
+            })
+          });
+        }
+        return this._loadAuth2Request;
+      }
+
+      _initAuth2() {
+        this._gauth2 = gapi.auth2.init({
+          client_id: this.googleClientId,
+          cookie_policy: 'single_host_origin',
+          // scope: this.googleScopes.join(' ') || undefined,
+        });
+        this._gauth2.currentUser.listen(this._handleGoogleUserUpdate.bind(this));
+      }
+
+      _handleGoogleUserUpdate(newUser) {
+        const isSignedIn = newUser.isSignedIn();
+        const scopes = newUser.getGrantedScopes() || '';
+        const response = newUser.getAuthResponse();
+        const loginInfo = {provider: 'google', token: response.id_token};
+
+        // We are logged with google, but api aws login is what we need
+        if (this.signedIn) {
+          this._apiRefreshToken(loginInfo);
+        } else {
+          this._apiSignIn(loginInfo);
+        }
+      }
+
+      _googleApiSignIn(token) {
+        return this._request({
+          method: 'GET',
+          url: `${this.apiEndpoint}/auth/google-auth`,
+          params: {token},
+        });
+      }
+
+      _updateSession(provider, session) {
+        this._setSignedInProvider(provider);
+
+        const identityId = session.identityId;
+        localStorage.setItem('identityId', session.identityId);
+        localStorage.setItem(`${identityId}.session`, JSON.stringify(session));
+
+        // refresh session timeout
+        const expirationDate = new Date(session.credentials.Expiration);
+        this._scheduleRefresh(expirationDate);
+
+        this._session = session;
+        this._setSessionExpired(false);
+        this._setSignedIn(true);
+      }
+
+      _scheduleRefresh(expirationDate) {
+        const remaining = expirationDate.getTime() - Date.now();
+        const timeoutMs = Math.max(0, remaining - (15 * 60 * 1000));
+
+        clearTimeout(this._refreshInterval);
+
+        this._refreshInterval = setTimeout(_ => {
+          if (navigator.onLine) {
+            this.refresh();
+          }
+        }, timeoutMs);
+      }
+
+      _signInFromCache() {
+        const identityId = localStorage.getItem('identityId');
+        const session = JSON.parse(localStorage.getItem(`${identityId}.session`));
+
+        if (session) {
+          const expirationDate = new Date(session.credentials.Expiration);
+          const remaining = expirationDate.getTime() - Date.now();
+          const expired = remaining <= 0;
+
+          this._session = session;
+
+
+          if (expired) {
+            this._setSessionExpired(true);
+            this.refresh();
+          } else {
+            this._scheduleRefresh(expirationDate);
+          }
+
+          this._setSignedIn(true);
+        }
+      }
+
+      _onBackOnline() {
+        if (this._session) {
+          const expirationDate = new Date(this._session.credentials.Expiration);
+          const remaining = expirationDate.getTime() - Date.now();
+
+          if (remaining <= 15 * 60 * 1000) {
+            this.refresh();
+          }
+        }
+      }
+
+      _request({method, url, params}) {
+        return new Promise((resolve, reject) => {
+          const xhr = document.createElement('iron-ajax');
+          xhr.method = method;
+          xhr.url = url;
+          xhr.params = params;
+          xhr.contentType = 'application/json';
+          xhr.handleAs = 'json';
+          xhr.addEventListener('error', (event) => reject(event.detail.error));
+          xhr.addEventListener('response', (event) => {
+            this._requestsSent--;
+            resolve(event.detail.response);
+          });
+          xhr.generateRequest();
+          this._requestsSent++;
+        });
+      }
+
+      _computeLoading(requestsSent) {
+        return requestsSent > 0;
+      }
+
+    }
+
+    customElements.define(ServerlessAuth.is, ServerlessAuth);
+
+  </script>
+</dom-module>
