@@ -55,6 +55,12 @@ class ServerlessAuth extends Polymer.Element {
           readOnly: true,
         },
 
+        region: {
+          type: String,
+          notify: true,
+          readOnly: true,
+        },
+
         accessKeyId: {
           type: String,
           notify: true,
@@ -294,6 +300,7 @@ class ServerlessAuth extends Polymer.Element {
     this._setSecretKey(session.credentials.SecretKey);
     this._setSessionToken(session.credentials.SessionToken);
     this._setSessionExpiration(new Date(session.credentials.Expiration));
+    this._setRegion(session.region);
 
     session.provider = provider;
     localStorage.setItem('identityId', session.identityId);
