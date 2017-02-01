@@ -175,7 +175,6 @@ class ServerlessAuth extends Polymer.Element {
   }
 
   _refreshGoogleToken() {
-    console.log('refresh using goog')
     if (this._gauth2) {
       return this._gauth2.currentUser.get().reloadAuthResponse();
       // on token received listener _handleGoogleUserUpdate will be called
