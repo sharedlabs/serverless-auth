@@ -340,6 +340,9 @@ class ServerlessAuth extends Polymer.Element {
    * Clears the current session effectively signing out the user
    */
   _clearSession() {
+    localStorage.removeItem('identityId');
+    localStorage.removeItem(`${this.identityId}.session`);
+
     this._setSignedInProvider('');
     this._setIdentityId('');
     this._setAccessKeyId('');
