@@ -1,8 +1,8 @@
-# \<serverless-auth\>
+# \<serverless-auth\> with Polymer 2
 
 Authentication for aws serverless apis using aws
 
-```
+```html
 <serverless-auth
     id="auth"
     api-endpoint="https://apiid.execute-api.eu-central-1.amazonaws.com/stage"
@@ -15,6 +15,6 @@ Authentication for aws serverless apis using aws
     session-token="{{_sessionToken}}"></serverless-auth>
 ```
 
-```
+```js
 this.$.auth.googleSignIn();
 ```
