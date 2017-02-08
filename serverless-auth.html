@@ -197,17 +197,11 @@ class ServerlessAuth extends Polymer.Element {
 
   _refreshGoogleToken() {
     if (this._gauth2) {
-
       this._requestsSent ++;
-
-      this._gauth2.currentUser.get().reloadAuthResponse().then(res => {
-        this._requestsSent --;
-        return res;
-      }).catch(err => {
-        this._requestsSent --;
-      });
-
+      this._gauth2.currentUser.get().reloadAuthResponse();
       // on token received listener _handleGoogleUserUpdate will be called
+      // We dont rely on the promise that reloadAuthResponse returns because
+      // it does not capture errors
     }
   }
 
@@ -279,6 +273,8 @@ class ServerlessAuth extends Polymer.Element {
    */
   _handleGoogleUserUpdate(newUser) {
     const isSignedIn = newUser.isSignedIn();
+
+    this._requestsSent --;
 
     if (isSignedIn) {
       // const scopes = newUser.getGrantedScopes() || '';
