@@ -42,13 +42,6 @@ class ServerlessAuth extends Polymer.Element {
           type: String,
         },
 
-        signedIn: {
-          type: Boolean,
-          value: false,
-          notify: true,
-          readOnly: true,
-        },
-
         identityId: {
           type: String,
           notify: true,
@@ -90,17 +83,38 @@ class ServerlessAuth extends Polymer.Element {
           readOnly: true,
         },
 
+        signedIn: {
+          type: Boolean,
+          value: false,
+          notify: true,
+          computed: '_computeSignedIn(identityId, region, accessKeyId, secretKey,'+
+            'sessionToken, sessionExpiration, signedInProvider)'
+        },
+
         sessionExpired: {
           type: Boolean,
-          readOnly: true,
           notify: true,
+          compute: '_computeSessionExpired(sessionExpiration)',
         },
 
         loading: {
           type: Boolean,
           value: false,
           notify: true,
-          computed: '_computeLoading(_requestsSent)'
+          readOnly: true,
+        },
+
+        /**
+         * When defined, an event named iron-signal-${signalName} will
+         * be emitted
+         * @type {String}
+         */
+        signalName: {
+          type: String,
+        },
+
+        _requestsSent: {
+          observer: '_requestsSentChanged'
         },
 
       }
@@ -113,8 +127,9 @@ class ServerlessAuth extends Polymer.Element {
     this._gauth2 = null;
     this._loadAuth2Request = null;
     this._refreshInterval = null;
+    this._updateLoadingDebounce = null;
+    this._googleTokenRefreshPromise = null;
     this._requestsSent = 0;
-    this._session = null;
     this._apiLoader = new Promise(resolve => {
       const googleJsApi = document.createElement('google-js-api');
       googleJsApi.addEventListener('js-api-load', resolve);
@@ -165,11 +180,11 @@ class ServerlessAuth extends Polymer.Element {
   cognitoConfirmAccount(email, code) {}
 
   refresh() {
-    if (this.signedIn) {
+    if (this.signedIn && !this.loading) {
       if (this.signedInProvider === 'google') {
-        return this._refreshGoogleToken();
+        this._refreshGoogleToken();
       } else if (this.signedInProvider === 'cognito') {
-        return this._refreshCognitoToken();
+        this._refreshCognitoToken();
       }
     }
   }
@@ -182,7 +197,14 @@ class ServerlessAuth extends Polymer.Element {
 
   _refreshGoogleToken() {
     if (this._gauth2) {
-      return this._gauth2.currentUser.get().reloadAuthResponse();
+
+      this._requestsSent ++;
+
+      this._gauth2.currentUser.get().reloadAuthResponse().then(res => {
+        this._requestsSent --;
+        return res;
+      });
+
       // on token received listener _handleGoogleUserUpdate will be called
     }
   }
@@ -307,20 +329,13 @@ class ServerlessAuth extends Polymer.Element {
     localStorage.setItem(`${session.identityId}.session`,
       JSON.stringify(session));
 
-    const remaining = this.sessionExpiration.getTime() - Date.now();
-    const expired = remaining <= 0;
-
-    if (expired) {
-      this._setSessionExpired(true);
+    if (this.sessionExpired) {
       this.refresh();
     } else {
       // refresh session timeout
-      this._setSessionExpired(false);
       this._scheduleRefresh(this.sessionExpiration);
     }
-
-    this._session = session;
-    this._setSignedIn(true);
+    this._notifySessionUpdate();
   }
 
   /**
@@ -333,10 +348,30 @@ class ServerlessAuth extends Polymer.Element {
     this._setSecretKey('');
     this._setSessionToken('');
     this._setSessionExpiration('');
-    this._setSessionExpired(false);
-    this._setSignedIn(false);
     this._clearScheduledRefresh();
-    this._session = null;
+    this._notifySessionUpdate();
+  }
+
+  _notifySessionUpdate() {
+    if (this.signalName) {
+      const signal = new CustomEvent('session-updated-' + this.signalName, {
+        bubbles: false,
+        detail: {
+          googleClientId: this.googleClientId,
+          apiEndpoint: this.apiEndpoint,
+          identityId: this.identityId,
+          region: this.region,
+          accessKeyId: this.accessKeyId,
+          secretKey: this.secretKey,
+          sessionToken: this.sessionToken,
+          sessionExpiration: this.sessionExpiration,
+          sessionExpired: this.sessionExpired,
+          signedInProvider: this.signedInProvider,
+          signedIn: this.signedIn,
+        }
+      });
+      window.dispatchEvent(signal);
+    }
   }
 
   /**
@@ -399,8 +434,30 @@ class ServerlessAuth extends Polymer.Element {
     });
   }
 
-  _computeLoading(requestsSent) {
-    return requestsSent > 0;
+  _requestsSentChanged(requestsSent) {
+    clearTimeout(this._updateLoadingDebounce);
+    this._updateLoadingDebounce = setTimeout(_ => {
+      this._setLoading(requestsSent > 0);
+    });
+  }
+
+  _computeSessionExpired(sessionExpiration) {
+    return this._isBeforeNow(sessionExpiration);
+  }
+
+  _computeSignedIn(identityId, region, accessKeyId, secretKey, sessionToken, sessionExpiration, signedInProvider) {
+    if (sessionExpiration) {
+      const expired = this._isBeforeNow(sessionExpiration);
+
+      return !expired && identityId && region && accessKeyId && secretKey &&
+        sessionToken && signedInProvider;
+    }
+    return  false;
+  }
+
+  _isBeforeNow(date) {
+    const remaining = date.getTime() - Date.now();
+    return remaining <= 0;
   }
 
 }
