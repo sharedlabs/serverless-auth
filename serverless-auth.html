@@ -203,6 +203,8 @@ class ServerlessAuth extends Polymer.Element {
       this._gauth2.currentUser.get().reloadAuthResponse().then(res => {
         this._requestsSent --;
         return res;
+      }).catch(err => {
+        this._requestsSent --;
       });
 
       // on token received listener _handleGoogleUserUpdate will be called
