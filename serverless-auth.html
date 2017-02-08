@@ -436,7 +436,7 @@ class ServerlessAuth extends Polymer.Element {
     clearTimeout(this._updateLoadingDebounce);
     this._updateLoadingDebounce = setTimeout(_ => {
       this._setLoading(requestsSent > 0);
-    });
+    }, 32);
   }
 
   _computeSessionExpired(sessionExpiration) {
