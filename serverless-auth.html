@@ -124,7 +124,6 @@ class ServerlessAuth extends Polymer.Element {
 
   constructor() {
     super();
-
     this._gauth2 = null;
     this._loadAuth2Request = null;
     this._refreshInterval = null;
@@ -374,12 +373,12 @@ class ServerlessAuth extends Polymer.Element {
       };
 
       new Polymer.IronMeta({
-        type: this.signalName + 'session',
+        type: this.signalName + '-session',
         key: 'session',
         value: session,
       });
 
-      const signal = new CustomEvent(this.signalName + 'session-update', {
+      const signal = new CustomEvent(this.signalName + '-session-update', {
         bubbles: false,
         detail: session,
       });
