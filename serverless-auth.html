@@ -85,7 +85,6 @@ class ServerlessAuth extends Polymer.Element {
 
         signedIn: {
           type: Boolean,
-          value: false,
           notify: true,
           computed: '_computeSignedIn(identityId, region, accessKeyId, secretKey,'+
             'sessionToken, sessionExpiration, signedInProvider)'
@@ -134,12 +133,11 @@ class ServerlessAuth extends Polymer.Element {
       const googleJsApi = document.createElement('google-js-api');
       googleJsApi.addEventListener('js-api-load', resolve);
     });
+    this._signInFromCache();
   }
 
   connectedCallback() {
     super.connectedCallback();
-    this._signInFromCache();
-
     requestAnimationFrame(_ => {
       window.addEventListener('online', this._onBackOnline.bind(this));
     });
