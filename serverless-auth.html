@@ -450,8 +450,8 @@ class ServerlessAuth extends Polymer.Element {
     if (sessionExpiration) {
       const expired = this._isBeforeNow(sessionExpiration);
 
-      return !expired && identityId && region && accessKeyId && secretKey &&
-        sessionToken && signedInProvider;
+      return Boolean(!expired && identityId && region && accessKeyId &&
+        secretKey && sessionToken && signedInProvider);
     }
     return  false;
   }
