@@ -1,4 +1,5 @@
 <link rel="import" href="../polymer/polymer-element.html">
+<link rel="import" href="../iron-meta/iron-meta.html">
 <link rel="import" href="../iron-ajax/iron-ajax.html">
 <link rel="import" href="./google-js-api.html">
 
@@ -110,6 +111,7 @@ class ServerlessAuth extends Polymer.Element {
          */
         signalName: {
           type: String,
+          observer: '_signalNameChanged'
         },
 
         _requestsSent: {
@@ -351,23 +353,35 @@ class ServerlessAuth extends Polymer.Element {
     this._notifySessionUpdate();
   }
 
+  _signalNameChanged() {
+    this._notifySessionUpdate();
+  }
+
   _notifySessionUpdate() {
     if (this.signalName) {
-      const signal = new CustomEvent('session-updated-' + this.signalName, {
+      const session = {
+        googleClientId: this.googleClientId,
+        apiEndpoint: this.apiEndpoint,
+        identityId: this.identityId,
+        region: this.region,
+        accessKeyId: this.accessKeyId,
+        secretKey: this.secretKey,
+        sessionToken: this.sessionToken,
+        sessionExpiration: this.sessionExpiration,
+        sessionExpired: this.sessionExpired,
+        signedInProvider: this.signedInProvider,
+        signedIn: this.signedIn,
+      };
+
+      new Polymer.IronMeta({
+        type: this.signalName + 'session',
+        key: 'session',
+        value: session,
+      });
+
+      const signal = new CustomEvent(this.signalName + 'session-update', {
         bubbles: false,
-        detail: {
-          googleClientId: this.googleClientId,
-          apiEndpoint: this.apiEndpoint,
-          identityId: this.identityId,
-          region: this.region,
-          accessKeyId: this.accessKeyId,
-          secretKey: this.secretKey,
-          sessionToken: this.sessionToken,
-          sessionExpiration: this.sessionExpiration,
-          sessionExpired: this.sessionExpired,
-          signedInProvider: this.signedInProvider,
-          signedIn: this.signedIn,
-        }
+        detail: session,
       });
       window.dispatchEvent(signal);
     }
