@@ -134,6 +134,9 @@ class ServerlessAuth extends Polymer.Element {
       const googleJsApi = document.createElement('google-js-api');
       googleJsApi.addEventListener('js-api-load', resolve);
     });
+    // Dispatch a session update to flush the apiEndpoint and any other
+    // session preconfigured value
+    this._notifySessionUpdate();
     this._signInFromCache();
   }
 
@@ -380,6 +383,7 @@ class ServerlessAuth extends Polymer.Element {
 
       const signal = new CustomEvent(this.signalName + '-session-update', {
         bubbles: false,
+        composed: true,
         detail: session,
       });
       window.dispatchEvent(signal);
