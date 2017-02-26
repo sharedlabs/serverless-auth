@@ -91,12 +91,6 @@ class ServerlessAuth extends Polymer.Element {
             'sessionToken, sessionExpiration, signedInProvider)'
         },
 
-        sessionExpired: {
-          type: Boolean,
-          notify: true,
-          compute: '_computeSessionExpired(sessionExpiration)',
-        },
-
         loading: {
           type: Boolean,
           value: false,
@@ -153,6 +147,10 @@ class ServerlessAuth extends Polymer.Element {
         return this._gauth2.currentUser.get().getAuthResponse().id_token;
       }
     }
+  }
+
+  get sessionExpired() {
+    return !this.sessionExpiration || this._isBeforeNow(this.sessionExpiration);
   }
 
   signOut() {
@@ -457,10 +455,6 @@ class ServerlessAuth extends Polymer.Element {
     }, 32);
   }
 
-  _computeSessionExpired(sessionExpiration) {
-    return this._isBeforeNow(sessionExpiration);
-  }
-
   _computeSignedIn(identityId, region, accessKeyId, secretKey, sessionToken, sessionExpiration, signedInProvider) {
     if (sessionExpiration) {
       const expired = this._isBeforeNow(sessionExpiration);
@@ -468,12 +462,11 @@ class ServerlessAuth extends Polymer.Element {
       return Boolean(!expired && identityId && region && accessKeyId &&
         secretKey && sessionToken && signedInProvider);
     }
-    return  false;
+    return false;
   }
 
   _isBeforeNow(date) {
-    const remaining = date.getTime() - Date.now();
-    return remaining <= 0;
+    return Date.now() > date.getTime();
   }
 
 }
