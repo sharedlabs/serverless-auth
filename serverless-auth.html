@@ -30,89 +30,87 @@ class ServerlessAuth extends Polymer.Element {
 
   static get is() {return 'serverless-auth';}
 
-  static get config() {
+  static get properties() {
     return {
-      properties: {
 
-        googleClientId: {
-          type: String,
-          observer: '_googleClientIdChanged',
-        },
+      googleClientId: {
+        type: String,
+        observer: '_googleClientIdChanged',
+      },
 
-        apiEndpoint: {
-          type: String,
-        },
+      apiEndpoint: {
+        type: String,
+      },
 
-        identityId: {
-          type: String,
-          notify: true,
-          readOnly: true,
-        },
+      identityId: {
+        type: String,
+        notify: true,
+        readOnly: true,
+      },
 
-        region: {
-          type: String,
-          notify: true,
-          readOnly: true,
-        },
+      region: {
+        type: String,
+        notify: true,
+        readOnly: true,
+      },
 
-        accessKeyId: {
-          type: String,
-          notify: true,
-          readOnly: true,
-        },
+      accessKeyId: {
+        type: String,
+        notify: true,
+        readOnly: true,
+      },
 
-        secretKey: {
-          type: String,
-          notify: true,
-          readOnly: true,
-        },
+      secretKey: {
+        type: String,
+        notify: true,
+        readOnly: true,
+      },
 
-        sessionToken: {
-          type: String,
-          notify: true,
-          readOnly: true,
-        },
+      sessionToken: {
+        type: String,
+        notify: true,
+        readOnly: true,
+      },
 
-        sessionExpiration: {
-          type: Date,
-          notify: true,
-          readOnly: true,
-        },
+      sessionExpiration: {
+        type: Date,
+        notify: true,
+        readOnly: true,
+      },
 
-        signedInProvider: {
-          type: String,
-          readOnly: true,
-        },
+      signedInProvider: {
+        type: String,
+        readOnly: true,
+      },
 
-        signedIn: {
-          type: Boolean,
-          notify: true,
-          computed: '_computeSignedIn(identityId, region, accessKeyId, secretKey,'+
-            'sessionToken, sessionExpiration, signedInProvider)'
-        },
+      signedIn: {
+        type: Boolean,
+        notify: true,
+        computed: '_computeSignedIn(identityId, region, accessKeyId, secretKey,'+
+          'sessionToken, sessionExpiration, signedInProvider)'
+      },
 
-        loading: {
-          type: Boolean,
-          value: false,
-          notify: true,
-          readOnly: true,
-        },
+      loading: {
+        type: Boolean,
+        value: false,
+        notify: true,
+        readOnly: true,
+      },
 
-        /**
-         * When defined, an event named iron-signal-${signalName} will
-         * be emitted
-         * @type {String}
-         */
-        signalName: {
-          type: String,
-          observer: '_signalNameChanged'
-        },
+      /**
+        * When defined, an event named iron-signal-${signalName} will
+        * be emitted
+        * @type {String}
+        */
+      signalName: {
+        type: String,
+        observer: '_signalNameChanged'
+      },
 
-        _requestsSent: {
-          observer: '_requestsSentChanged'
-        },
-
+      _requestsSent: {
+        observer: '_requestsSentChanged'
       }
+
     };
   }
 
