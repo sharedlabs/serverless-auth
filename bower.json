@@ -3,7 +3,7 @@
   "description": "Authentication for aws serverless apis using aws",
   "main": "serverless-auth.html",
   "dependencies": {
-    "polymer": "git@github.com:Polymer/polymer#v2.0.0-rc.1",
+    "polymer": "git@github.com:Polymer/polymer#v2.0.0-rc.2",
     "iron-jsonp-library": "PolymerElements/iron-jsonp-library#2.0-preview",
     "iron-meta": "PolymerElements/iron-meta#2.0-preview"
   },

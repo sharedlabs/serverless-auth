@@ -17,458 +17,470 @@ GET ${api}/auth/refresh
   @param {String} token - provider token id
   @param {String} provider - string identifiying the token provider
 -->
+<dom-module id="serverless-auth">
+  <template>
+    <google-js-api id="gapiLoader"></google-js-api>
+  </template>
 
-<script>
-
-/**
- * Fired when an error is received.
- *
- * @event error
- */
-
-class ServerlessAuth extends Polymer.Element {
-
-  static get is() {return 'serverless-auth';}
-
-  static get properties() {
-    return {
-
-      googleClientId: {
-        type: String,
-        observer: '_googleClientIdChanged',
-      },
-
-      apiEndpoint: {
-        type: String,
-      },
-
-      identityId: {
-        type: String,
-        notify: true,
-        readOnly: true,
-      },
-
-      region: {
-        type: String,
-        notify: true,
-        readOnly: true,
-      },
-
-      accessKeyId: {
-        type: String,
-        notify: true,
-        readOnly: true,
-      },
-
-      secretKey: {
-        type: String,
-        notify: true,
-        readOnly: true,
-      },
-
-      sessionToken: {
-        type: String,
-        notify: true,
-        readOnly: true,
-      },
-
-      sessionExpiration: {
-        type: Date,
-        notify: true,
-        readOnly: true,
-      },
-
-      signedInProvider: {
-        type: String,
-        readOnly: true,
-      },
-
-      signedIn: {
-        type: Boolean,
-        notify: true,
-        computed: '_computeSignedIn(identityId, region, accessKeyId, secretKey,'+
-          'sessionToken, sessionExpiration, signedInProvider)'
-      },
-
-      loading: {
-        type: Boolean,
-        value: false,
-        notify: true,
-        readOnly: true,
-      },
-
-      /**
-        * When defined, an event named iron-signal-${signalName} will
-        * be emitted
-        * @type {String}
-        */
-      signalName: {
-        type: String,
-        observer: '_signalNameChanged'
-      },
-
-      _requestsSent: {
-        observer: '_requestsSentChanged'
-      }
-
-    };
-  }
-
-  constructor() {
-    super();
-    this._gauth2 = null;
-    this._loadAuth2Request = null;
-    this._refreshInterval = null;
-    this._updateLoadingDebounce = null;
-    this._googleTokenRefreshPromise = null;
-    this._requestsSent = 0;
-    this._apiLoader = new Promise(resolve => {
-      const googleJsApi = document.createElement('google-js-api');
-      googleJsApi.addEventListener('js-api-load', resolve);
-    });
-    // Dispatch a session update to flush the apiEndpoint and any other
-    // session preconfigured value
-    this._notifySessionUpdate();
-    this._signInFromCache();
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    requestAnimationFrame(_ => {
-      window.addEventListener('online', this._onBackOnline.bind(this));
-    });
-  }
-
-  get providerToken() {
-    if (this.signedInProvider === 'google') {
-      if (this._gauth2) {
-        return this._gauth2.currentUser.get().getAuthResponse().id_token;
-      }
-    }
-  }
-
-  get sessionExpired() {
-    return !this.sessionExpiration || this._isBeforeNow(this.sessionExpiration);
-  }
-
-  signOut() {
-    if (this.signedInProvider === 'google' && this._gauth2) {
-      this._gauth2.signOut();
-    } else {
-      this._clearSession();
-    }
-  }
-
-  googleSignIn() {
-    if (this.googleClientId && !this.signedIn) {
-      this._requestsSent ++;
-
-      this._loadAuth2().then(_ => {
-        this._gauth2.signIn().then(_ => {
-          this._requestsSent --;
-        });
-      });
-    }
-  }
-
-  cognitoSignIn(username, password) {}
-
-  cognitoSignUp(username, password) {}
-
-  cognitoConfirmAccount(email, code) {}
-
-  refresh() {
-    if (this.signedIn && !this.loading) {
-      if (this.signedInProvider === 'google') {
-        this._refreshGoogleToken();
-      } else if (this.signedInProvider === 'cognito') {
-        this._refreshCognitoToken();
-      }
-    }
-  }
-
-  _googleClientIdChanged(googleClientId) {
-    if (googleClientId) {
-      this._loadAuth2();
-    }
-  }
-
-  _refreshGoogleToken() {
-    if (this._gauth2) {
-      this._requestsSent ++;
-      this._gauth2.currentUser.get().reloadAuthResponse();
-      // on token received listener _handleGoogleUserUpdate will be called
-      // We dont rely on the promise that reloadAuthResponse returns because
-      // it does not capture errors
-    }
-  }
-
-  _refreshCognitoToken() {}
-
-  _apiSignInWithCognito() {}
-
-  _apiSignInWithGoogle(token) {
-    return this._request({
-      method: 'GET',
-      url: `${this.apiEndpoint}/auth/google-auth`,
-      params: {token},
-    });
-  }
+  <script>
 
   /**
-   * Get stored session from cache and try to sign in
+   * Fired when an error is received.
+   *
+   * @event error
    */
-  _signInFromCache() {
-    const identityId = localStorage.getItem('identityId');
-    if (identityId) {
-      const session = JSON.parse(localStorage.getItem(`${identityId}.session`));
-      if (session) {
-        // Notice that comming from cache we could not have provider
-        // token but have valid app token
-        this._updateSession(session.provider, session);
-      }
-    }
-  }
 
-  /**
-   * Load google oauth2
-   */
-  _loadAuth2() {
-    if (!this._loadAuth2Request) {
-      this._loadAuth2Request = new Promise((resolve, reject) => {
-        this._apiLoader.then(_ => {
-          gapi.load('auth2', _ => {
-            if (!('gapi' in window) || !('auth2' in window.gapi)) {
-              reject(new Error('Could not load google auth2'));
-              return;
-            }
-            this._initAuth2();
-            resolve();
-          });
-        })
-      });
-    }
-    return this._loadAuth2Request;
-  }
+  class ServerlessAuth extends Polymer.Element {
 
-  /**
-   * Initialize google auth2 object
-   */
-  _initAuth2() {
-    this._gauth2 = gapi.auth2.init({
-      client_id: this.googleClientId,
-      cookie_policy: 'single_host_origin',
-      // scope: this.googleScopes.join(' ') || undefined,
-    });
-    this._gauth2.currentUser.listen(this._handleGoogleUserUpdate.bind(this));
-  }
+    static get is() {return 'serverless-auth';}
 
-  /**
-   * Google oauth callback.
-   * If the event indicates that user signed in to Google, sign in to
-   * the app, otherwise make sure we sign out
-   * @param  {Object} newUser
-   */
-  _handleGoogleUserUpdate(newUser) {
-    const isSignedIn = newUser.isSignedIn();
+    static get properties() {
+      return {
 
-    this._requestsSent --;
+        googleClientId: {
+          type: String,
+          observer: '_googleClientIdChanged',
+        },
 
-    if (isSignedIn) {
-      // const scopes = newUser.getGrantedScopes() || '';
-      const response = newUser.getAuthResponse();
-      const token = response.id_token;
-      const provider = 'google';
-      // We are logged with google. Now login with configured api
-      this._apiSignInWithGoogle(token).then(session => {
-        this._updateSession(provider, session);
-      });
+        apiEndpoint: {
+          type: String,
+        },
 
-      /** TODO use refresh endpoint
-      if (this.signedIn) {
-        // do refresh
-      } else {
-        // do login
-      }
-      */
-    } else {
-      // When google says he tried but user is not login anymore,
-      // make sure we disconnect from the app, event if we have a valid
-      // app session token, because app session is doomed
-      this._clearSession();
-    }
-  }
+        identityId: {
+          type: String,
+          notify: true,
+          readOnly: true,
+        },
 
-  /**
-   * Updates the session parameters and stablishes user as logged-in
-   * @param  {String} provider
-   * @param  {Object} session
-   * @param  {String} session.identityId
-   * @param  {String} session.region
-   * @param  {Object} session.credentials
-   * @param  {String} session.credentials.AccessKeyId
-   * @param  {String} session.credentials.SecretKey
-   * @param  {String} session.credentials.SessionToken
-   * @param  {String} session.credentials.Expiration
-   */
-  _updateSession(provider, session) {
-    this._setSignedInProvider(provider);
-    this._setIdentityId(session.identityId);
-    this._setAccessKeyId(session.credentials.AccessKeyId);
-    this._setSecretKey(session.credentials.SecretKey);
-    this._setSessionToken(session.credentials.SessionToken);
-    this._setSessionExpiration(new Date(session.credentials.Expiration));
-    this._setRegion(session.region);
+        region: {
+          type: String,
+          notify: true,
+          readOnly: true,
+        },
 
-    session.provider = provider;
-    localStorage.setItem('identityId', session.identityId);
-    localStorage.setItem(`${session.identityId}.session`,
-      JSON.stringify(session));
+        accessKeyId: {
+          type: String,
+          notify: true,
+          readOnly: true,
+        },
 
-    if (this.sessionExpired) {
-      this.refresh();
-    } else {
-      // refresh session timeout
-      this._scheduleRefresh(this.sessionExpiration);
-    }
-    this._notifySessionUpdate();
-  }
+        secretKey: {
+          type: String,
+          notify: true,
+          readOnly: true,
+        },
 
-  /**
-   * Clears the current session effectively signing out the user
-   */
-  _clearSession() {
-    localStorage.removeItem('identityId');
-    localStorage.removeItem(`${this.identityId}.session`);
+        sessionToken: {
+          type: String,
+          notify: true,
+          readOnly: true,
+        },
 
-    this._setSignedInProvider('');
-    this._setIdentityId('');
-    this._setAccessKeyId('');
-    this._setSecretKey('');
-    this._setSessionToken('');
-    this._setSessionExpiration('');
-    this._clearScheduledRefresh();
-    this._notifySessionUpdate();
-  }
+        sessionExpiration: {
+          type: Date,
+          notify: true,
+          readOnly: true,
+        },
 
-  _signalNameChanged() {
-    this._notifySessionUpdate();
-  }
+        signedInProvider: {
+          type: String,
+          readOnly: true,
+        },
 
-  _notifySessionUpdate() {
-    if (this.signalName) {
-      const session = {
-        googleClientId: this.googleClientId,
-        apiEndpoint: this.apiEndpoint,
-        identityId: this.identityId,
-        region: this.region,
-        accessKeyId: this.accessKeyId,
-        secretKey: this.secretKey,
-        sessionToken: this.sessionToken,
-        sessionExpiration: this.sessionExpiration,
-        sessionExpired: this.sessionExpired,
-        signedInProvider: this.signedInProvider,
-        signedIn: this.signedIn,
+        signedIn: {
+          type: Boolean,
+          notify: true,
+          computed: '_computeSignedIn(identityId, region, accessKeyId, secretKey,'+
+            'sessionToken, sessionExpiration, signedInProvider)'
+        },
+
+        loading: {
+          type: Boolean,
+          value: false,
+          notify: true,
+          readOnly: true,
+        },
+
+        /**
+          * When defined, an event named iron-signal-${signalName} will
+          * be emitted
+          * @type {String}
+          */
+        signalName: {
+          type: String,
+          observer: '_signalNameChanged'
+        },
+
+        _requestsSent: {
+          observer: '_requestsSentChanged'
+        }
+
       };
-
-      new Polymer.IronMeta({
-        type: this.signalName + '-session',
-        key: 'session',
-        value: session,
-      });
-
-      const signal = new CustomEvent(this.signalName + '-session-update', {
-        bubbles: false,
-        composed: true,
-        detail: session,
-      });
-      window.dispatchEvent(signal);
     }
-  }
 
-  /**
-   * Schedules a future session refresh.
-   * If the user if offline it ignores the refresh. When the user
-   * gets back online, the sessión will be refreshed if needed.
-   * @param  {Date} expirationDate
-   */
-  _scheduleRefresh(expirationDate) {
-    const remaining = expirationDate.getTime() - Date.now();
-    const timeoutMs = Math.max(0, remaining - (15 * 60 * 1000));
+    constructor() {
+      super();
+      this._gauth2 = null;
+      this._loadAuth2Request = null;
+      this._refreshInterval = null;
+      this._updateLoadingDebounce = null;
+      this._googleTokenRefreshPromise = null;
+      this._requestsSent = 0;
+      this._apiLoader = new Promise(resolve => {
+        const googleJsApi = this.$.gapiLoader;
+        if (googleJsApi.api) {
+          resolve();
+        } else {
+          googleJsApi.addEventListener('js-api-load', resolve);
+        }
+      });
+      // Dispatch a session update to flush the apiEndpoint and any other
+      // session preconfigured value
+      this._notifySessionUpdate();
+      this._signInFromCache();
+    }
 
-    this._clearScheduledRefresh();
-    this._refreshInterval = setTimeout(_ => {
-      if (navigator.onLine) {
-        this.refresh();
+    connectedCallback() {
+      super.connectedCallback();
+      requestAnimationFrame(_ => {
+        window.addEventListener('online', this._onBackOnline.bind(this));
+      });
+    }
+
+    get providerToken() {
+      if (this.signedInProvider === 'google') {
+        if (this._gauth2) {
+          return this._gauth2.currentUser.get().getAuthResponse().id_token;
+        }
       }
-    }, timeoutMs);
-  }
+    }
 
-  /**
-   * Clear future session refresh
-   */
-  _clearScheduledRefresh() {
-    clearTimeout(this._refreshInterval);
-  }
+    get sessionExpired() {
+      return !this.sessionExpiration || this._isBeforeNow(this.sessionExpiration);
+    }
 
-  /**
-   * The user recovers it's connection. If the session is about to
-   * expire or expired, refresh it. Otherwise schedule a future refresh
-   * in case the last scheduled refresh ocurred while offline.
-   */
-  _onBackOnline() {
-    if (this.signedIn) {
-      const remaining = this.sessionExpiration.getTime() - Date.now();
+    signOut() {
+      if (this.signedInProvider === 'google' && this._gauth2) {
+        this._gauth2.signOut();
+      } else {
+        this._clearSession();
+      }
+    }
 
-      if (remaining <= 15 * 60 * 1000) {
+    googleSignIn() {
+      if (this.googleClientId && !this.signedIn) {
+        this._requestsSent ++;
+
+        this._loadAuth2().then(_ => {
+          this._gauth2.signIn().then(_ => {
+            this._requestsSent --;
+          });
+        });
+      }
+    }
+
+    cognitoSignIn(username, password) {}
+
+    cognitoSignUp(username, password) {}
+
+    cognitoConfirmAccount(email, code) {}
+
+    refresh() {
+      if (this.signedIn && !this.loading) {
+        if (this.signedInProvider === 'google') {
+          this._refreshGoogleToken();
+        } else if (this.signedInProvider === 'cognito') {
+          this._refreshCognitoToken();
+        }
+      }
+    }
+
+    _googleClientIdChanged(googleClientId) {
+      if (googleClientId) {
+        this._loadAuth2();
+      }
+    }
+
+    _refreshGoogleToken() {
+      if (this._gauth2) {
+        this._requestsSent ++;
+        this._gauth2.currentUser.get().reloadAuthResponse();
+        // on token received listener _handleGoogleUserUpdate will be called
+        // We dont rely on the promise that reloadAuthResponse returns because
+        // it does not capture errors
+      }
+    }
+
+    _refreshCognitoToken() {}
+
+    _apiSignInWithCognito() {}
+
+    _apiSignInWithGoogle(token) {
+      return this._request({
+        method: 'GET',
+        url: `${this.apiEndpoint}/auth/google-auth`,
+        params: {token},
+      });
+    }
+
+    /**
+     * Get stored session from cache and try to sign in
+     */
+    _signInFromCache() {
+      const identityId = localStorage.getItem('identityId');
+      if (identityId) {
+        const session = JSON.parse(localStorage.getItem(`${identityId}.session`));
+        if (session) {
+          // Notice that comming from cache we could not have provider
+          // token but have valid app token
+          this._updateSession(session.provider, session);
+        }
+      }
+    }
+
+    /**
+     * Load google oauth2
+     */
+    _loadAuth2() {
+      if (!this._loadAuth2Request) {
+        this._loadAuth2Request = new Promise((resolve, reject) => {
+          this._apiLoader.then(_ => {
+            gapi.load('auth2', _ => {
+              if (!('gapi' in window) || !('auth2' in window.gapi)) {
+                reject(new Error('Could not load google auth2'));
+                return;
+              }
+              this._initAuth2();
+              resolve();
+            });
+          })
+        });
+      }
+      return this._loadAuth2Request;
+    }
+
+    /**
+     * Initialize google auth2 object
+     */
+    _initAuth2() {
+      this._gauth2 = gapi.auth2.init({
+        client_id: this.googleClientId,
+        cookie_policy: 'single_host_origin',
+        // scope: this.googleScopes.join(' ') || undefined,
+      });
+      this._gauth2.currentUser.listen(this._handleGoogleUserUpdate.bind(this));
+    }
+
+    /**
+     * Google oauth callback.
+     * If the event indicates that user signed in to Google, sign in to
+     * the app, otherwise make sure we sign out
+     * @param  {Object} newUser
+     */
+    _handleGoogleUserUpdate(newUser) {
+      const isSignedIn = newUser.isSignedIn();
+
+      this._requestsSent --;
+
+      if (isSignedIn) {
+        // const scopes = newUser.getGrantedScopes() || '';
+        const response = newUser.getAuthResponse();
+        const token = response.id_token;
+        const provider = 'google';
+        // We are logged with google. Now login with configured api
+        this._apiSignInWithGoogle(token).then(session => {
+          this._updateSession(provider, session);
+        });
+
+        /** TODO use refresh endpoint
+        if (this.signedIn) {
+          // do refresh
+        } else {
+          // do login
+        }
+        */
+      } else {
+        // When google says he tried but user is not login anymore,
+        // make sure we disconnect from the app, event if we have a valid
+        // app session token, because app session is doomed
+        this._clearSession();
+      }
+    }
+
+    /**
+     * Updates the session parameters and stablishes user as logged-in
+     * @param  {String} provider
+     * @param  {Object} session
+     * @param  {String} session.identityId
+     * @param  {String} session.region
+     * @param  {Object} session.credentials
+     * @param  {String} session.credentials.AccessKeyId
+     * @param  {String} session.credentials.SecretKey
+     * @param  {String} session.credentials.SessionToken
+     * @param  {String} session.credentials.Expiration
+     */
+    _updateSession(provider, session) {
+      this._setSignedInProvider(provider);
+      this._setIdentityId(session.identityId);
+      this._setAccessKeyId(session.credentials.AccessKeyId);
+      this._setSecretKey(session.credentials.SecretKey);
+      this._setSessionToken(session.credentials.SessionToken);
+      this._setSessionExpiration(new Date(session.credentials.Expiration));
+      this._setRegion(session.region);
+
+      session.provider = provider;
+      localStorage.setItem('identityId', session.identityId);
+      localStorage.setItem(`${session.identityId}.session`,
+        JSON.stringify(session));
+
+      if (this.sessionExpired) {
         this.refresh();
       } else {
+        // refresh session timeout
         this._scheduleRefresh(this.sessionExpiration);
       }
+      this._notifySessionUpdate();
     }
-  }
 
-  _request({method, url, params}) {
-    return new Promise((resolve, reject) => {
-      const xhr = document.createElement('iron-ajax');
-      xhr.method = method;
-      xhr.url = url;
-      xhr.params = params;
-      xhr.contentType = 'application/json';
-      xhr.handleAs = 'json';
-      xhr.addEventListener('error', (event) => reject(event.detail.error));
-      xhr.addEventListener('response', (event) => {
-        this._requestsSent--;
-        resolve(event.detail.response);
+    /**
+     * Clears the current session effectively signing out the user
+     */
+    _clearSession() {
+      localStorage.removeItem('identityId');
+      localStorage.removeItem(`${this.identityId}.session`);
+
+      this._setSignedInProvider('');
+      this._setIdentityId('');
+      this._setAccessKeyId('');
+      this._setSecretKey('');
+      this._setSessionToken('');
+      this._setSessionExpiration('');
+      this._clearScheduledRefresh();
+      this._notifySessionUpdate();
+    }
+
+    _signalNameChanged() {
+      this._notifySessionUpdate();
+    }
+
+    _notifySessionUpdate() {
+      if (this.signalName) {
+        const session = {
+          googleClientId: this.googleClientId,
+          apiEndpoint: this.apiEndpoint,
+          identityId: this.identityId,
+          region: this.region,
+          accessKeyId: this.accessKeyId,
+          secretKey: this.secretKey,
+          sessionToken: this.sessionToken,
+          sessionExpiration: this.sessionExpiration,
+          sessionExpired: this.sessionExpired,
+          signedInProvider: this.signedInProvider,
+          signedIn: this.signedIn,
+        };
+
+        new Polymer.IronMeta({
+          type: this.signalName + '-session',
+          key: 'session',
+          value: session,
+        });
+
+        const signal = new CustomEvent(this.signalName + '-session-update', {
+          bubbles: false,
+          composed: true,
+          detail: session,
+        });
+        window.dispatchEvent(signal);
+      }
+    }
+
+    /**
+     * Schedules a future session refresh.
+     * If the user if offline it ignores the refresh. When the user
+     * gets back online, the sessión will be refreshed if needed.
+     * @param  {Date} expirationDate
+     */
+    _scheduleRefresh(expirationDate) {
+      const remaining = expirationDate.getTime() - Date.now();
+      const timeoutMs = Math.max(0, remaining - (15 * 60 * 1000));
+
+      this._clearScheduledRefresh();
+      this._refreshInterval = setTimeout(_ => {
+        if (navigator.onLine) {
+          this.refresh();
+        }
+      }, timeoutMs);
+    }
+
+    /**
+     * Clear future session refresh
+     */
+    _clearScheduledRefresh() {
+      clearTimeout(this._refreshInterval);
+    }
+
+    /**
+     * The user recovers it's connection. If the session is about to
+     * expire or expired, refresh it. Otherwise schedule a future refresh
+     * in case the last scheduled refresh ocurred while offline.
+     */
+    _onBackOnline() {
+      if (this.signedIn) {
+        const remaining = this.sessionExpiration.getTime() - Date.now();
+
+        if (remaining <= 15 * 60 * 1000) {
+          this.refresh();
+        } else {
+          this._scheduleRefresh(this.sessionExpiration);
+        }
+      }
+    }
+
+    _request({method, url, params}) {
+      return new Promise((resolve, reject) => {
+        const xhr = document.createElement('iron-ajax');
+        xhr.method = method;
+        xhr.url = url;
+        xhr.params = params;
+        xhr.contentType = 'application/json';
+        xhr.handleAs = 'json';
+        xhr.addEventListener('error', (event) => reject(event.detail.error));
+        xhr.addEventListener('response', (event) => {
+          this._requestsSent--;
+          resolve(event.detail.response);
+        });
+        xhr.generateRequest();
+        this._requestsSent++;
       });
-      xhr.generateRequest();
-      this._requestsSent++;
-    });
-  }
-
-  _requestsSentChanged(requestsSent) {
-    clearTimeout(this._updateLoadingDebounce);
-    this._updateLoadingDebounce = setTimeout(_ => {
-      this._setLoading(requestsSent > 0);
-    }, 32);
-  }
-
-  _computeSignedIn(identityId, region, accessKeyId, secretKey, sessionToken, sessionExpiration, signedInProvider) {
-    if (sessionExpiration) {
-      const expired = this._isBeforeNow(sessionExpiration);
-
-      return Boolean(!expired && identityId && region && accessKeyId &&
-        secretKey && sessionToken && signedInProvider);
     }
-    return false;
+
+    _requestsSentChanged(requestsSent) {
+      clearTimeout(this._updateLoadingDebounce);
+      this._updateLoadingDebounce = setTimeout(_ => {
+        this._setLoading(requestsSent > 0);
+      }, 32);
+    }
+
+    _computeSignedIn(identityId, region, accessKeyId, secretKey, sessionToken, sessionExpiration, signedInProvider) {
+      if (sessionExpiration) {
+        const expired = this._isBeforeNow(sessionExpiration);
+
+        return Boolean(!expired && identityId && region && accessKeyId &&
+          secretKey && sessionToken && signedInProvider);
+      }
+      return false;
+    }
+
+    _isBeforeNow(date) {
+      return Date.now() > date.getTime();
+    }
+
   }
 
-  _isBeforeNow(date) {
-    return Date.now() > date.getTime();
-  }
+  customElements.define(ServerlessAuth.is, ServerlessAuth);
 
-}
+  </script>
 
-customElements.define(ServerlessAuth.is, ServerlessAuth);
 
-</script>
+</dom-module>
+
