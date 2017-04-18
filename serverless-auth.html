@@ -39,7 +39,7 @@ GET ${api}/auth/refresh
 
         googleClientId: {
           type: String,
-          observer: '_googleClientIdChanged',
+          // observer: '_googleClientIdChanged',
         },
 
         apiEndpoint: {
@@ -113,9 +113,19 @@ GET ${api}/auth/refresh
 
         _requestsSent: {
           observer: '_requestsSentChanged'
-        }
+        },
+
+        _isAttached: {
+          type: Boolean,
+        },
 
       };
+    }
+
+    static get observers() {
+      return [
+        '_googleClientIdChanged(googleClientId, _isAttached)',
+      ];
     }
 
     constructor() {
@@ -126,14 +136,7 @@ GET ${api}/auth/refresh
       this._updateLoadingDebounce = null;
       this._googleTokenRefreshPromise = null;
       this._requestsSent = 0;
-      this._apiLoader = new Promise(resolve => {
-        const googleJsApi = this.$.gapiLoader;
-        if (googleJsApi.api) {
-          resolve();
-        } else {
-          googleJsApi.addEventListener('js-api-load', resolve);
-        }
-      });
+      this._apiLoader = null;
       // Dispatch a session update to flush the apiEndpoint and any other
       // session preconfigured value
       this._notifySessionUpdate();
@@ -142,9 +145,26 @@ GET ${api}/auth/refresh
 
     connectedCallback() {
       super.connectedCallback();
+
       requestAnimationFrame(_ => {
         window.addEventListener('online', this._onBackOnline.bind(this));
+
+        this._apiLoader = this._apiLoader || new Promise(resolve => {
+          const googleJsApi = this.$.gapiLoader;
+
+          if (googleJsApi.api) {
+            resolve();
+          } else {
+            googleJsApi.addEventListener('js-api-load', resolve);
+          }
+        });
+        this._isAttached = true;
       });
+    }
+
+    disconnectedCallback() {
+      super.disconnectedCallback();
+      this._isAttached = false;
     }
 
     get providerToken() {
@@ -195,8 +215,8 @@ GET ${api}/auth/refresh
       }
     }
 
-    _googleClientIdChanged(googleClientId) {
-      if (googleClientId) {
+    _googleClientIdChanged(googleClientId, isAttached) {
+      if (googleClientId && isAttached) {
         this._loadAuth2();
       }
     }
